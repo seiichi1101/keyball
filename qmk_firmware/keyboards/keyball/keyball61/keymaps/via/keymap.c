@@ -61,7 +61,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 #define KBX_SCRL  KC_F23 // hold: scroll, tap: middle click
 
 #define KBX_TAP_TERM 200
-#define KBX_BTN3_MS  30
+#define KBX_BTN3_MS  50
 
 static bool     kbx_hscrl_held = false;
 static bool     kbx_scrl_held  = false;
@@ -114,16 +114,22 @@ bool is_mouse_record_user(uint16_t keycode, keyrecord_t *record) {
 #endif
 
 report_mouse_t pointing_device_task_user(report_mouse_t rep) {
-    if (kbx_hscrl_held) {
-        rep.v = 0;
-    }
     if (kbx_scrl_held && (rep.h != 0 || rep.v != 0)) {
         kbx_scrl_moved = true;
+    }
+    if (kbx_hscrl_held) {
+        // keyball61 feeds vertical scroll from the ball's x axis, so redirect that
+        // instead of dropping it: the usual scrolling motion now scrolls sideways.
+        rep.h = -rep.v;
+        rep.v = 0;
     }
     if (kbx_btn3_click) {
         if (timer_elapsed(kbx_btn3_time) < KBX_BTN3_MS) {
             rep.buttons |= MOUSE_BTN3;
         } else {
+            // pointing_device_send() carries buttons over between reports, so a click
+            // that is only ever OR'd in never releases.
+            rep.buttons &= ~MOUSE_BTN3;
             kbx_btn3_click = false;
         }
     }
