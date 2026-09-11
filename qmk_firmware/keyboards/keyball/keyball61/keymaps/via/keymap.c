@@ -56,13 +56,78 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 };
 // clang-format on
 
+// Assign these in Remap; they are ordinary keycodes there, so they can be found by name.
+#define KBX_HSCRL KC_F24 // hold: scroll horizontally only
+#define KBX_SCRL  KC_F23 // hold: scroll, tap: middle click
+
+#define KBX_TAP_TERM 200
+#define KBX_BTN3_MS  30
+
+static bool     kbx_hscrl_held = false;
+static bool     kbx_scrl_held  = false;
+static uint16_t kbx_scrl_time  = 0;
+static bool     kbx_scrl_moved = false;
+static uint16_t kbx_btn3_time  = 0;
+static bool     kbx_btn3_click = false;
+
+static bool kbx_scroll_wanted(layer_state_t state) {
+    return get_highest_layer(state) == 3 || kbx_hscrl_held || kbx_scrl_held;
+}
+
 layer_state_t layer_state_set_user(layer_state_t state) {
     // Auto enable scroll mode when the highest layer is 3
-    keyball_set_scroll_mode(get_highest_layer(state) == 3);
+    keyball_set_scroll_mode(kbx_scroll_wanted(state));
 #ifdef POINTING_DEVICE_AUTO_MOUSE_ENABLE
     keyball_handle_auto_mouse_layer_change(state);
 #endif
     return state;
+}
+
+bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+    switch (keycode) {
+        case KBX_HSCRL:
+            kbx_hscrl_held = record->event.pressed;
+            keyball_set_scroll_mode(kbx_scroll_wanted(layer_state));
+            return false;
+
+        case KBX_SCRL:
+            kbx_scrl_held = record->event.pressed;
+            if (record->event.pressed) {
+                kbx_scrl_time  = timer_read();
+                kbx_scrl_moved = false;
+            } else if (!kbx_scrl_moved && timer_elapsed(kbx_scrl_time) < KBX_TAP_TERM) {
+                kbx_btn3_time  = timer_read();
+                kbx_btn3_click = true;
+            }
+            keyball_set_scroll_mode(kbx_scroll_wanted(layer_state));
+            return false;
+    }
+    return true;
+}
+
+#ifdef POINTING_DEVICE_AUTO_MOUSE_ENABLE
+// In scroll mode the ball feeds h/v, which auto_mouse_activation() does not accumulate,
+// so without this the auto mouse layer drops out while scrolling.
+bool is_mouse_record_user(uint16_t keycode, keyrecord_t *record) {
+    return keycode == KBX_HSCRL || keycode == KBX_SCRL;
+}
+#endif
+
+report_mouse_t pointing_device_task_user(report_mouse_t rep) {
+    if (kbx_hscrl_held) {
+        rep.v = 0;
+    }
+    if (kbx_scrl_held && (rep.h != 0 || rep.v != 0)) {
+        kbx_scrl_moved = true;
+    }
+    if (kbx_btn3_click) {
+        if (timer_elapsed(kbx_btn3_time) < KBX_BTN3_MS) {
+            rep.buttons |= MOUSE_BTN3;
+        } else {
+            kbx_btn3_click = false;
+        }
+    }
+    return rep;
 }
 
 #ifdef OLED_ENABLE
